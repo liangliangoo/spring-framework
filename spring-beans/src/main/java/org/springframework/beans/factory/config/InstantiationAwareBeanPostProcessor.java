@@ -91,6 +91,7 @@ public interface InstantiationAwareBeanPostProcessor extends BeanPostProcessor {
 	 * @see #postProcessBeforeInstantiation
 	 */
 	default boolean postProcessAfterInstantiation(Object bean, String beanName) throws BeansException {
+		//	postProcessPropertyValues
 		return true;
 	}
 
@@ -143,7 +144,7 @@ public interface InstantiationAwareBeanPostProcessor extends BeanPostProcessor {
 	@Nullable
 	default PropertyValues postProcessPropertyValues(
 			PropertyValues pvs, PropertyDescriptor[] pds, Object bean, String beanName) throws BeansException {
-
+		//如果实例化后置 postProcessAfterInstantiation() 方法返回false，那么该方法不会被调用
 		return pvs;
 	}
 

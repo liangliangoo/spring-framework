@@ -73,13 +73,27 @@ public class DefaultSingletonBeanRegistry extends SimpleAliasRegistry implements
 	/** Maximum number of suppressed exceptions to preserve. */
 	private static final int SUPPRESSED_EXCEPTIONS_LIMIT = 100;
 
+	/*
+		让我们来分析一下“A的某个field或者setter依赖了B的实例对象，同时B的某个field或者setter依赖了A的实例对象”这种循环依赖的情景。
+		A doCreateBean()初始化，由于还未创建，从一级缓存查不到，此时只是一个半成品（提前暴露的对象），放入三级缓存singletonFactories;
+		A发现自己需要B对象，但是三级缓存中未发现B，创建B的半成品，放入singletonFactories;
+		B发现自己需要A对象，从一级缓存singletonObjects和二级缓存earlySingletonObjects中未发现A，但是在三级缓存singletonFactories中发现A，
+		将A放入二级缓存earlySingletonObjects，同时从三级缓存删除；
+		将A注入到对象B中；
+		B完成属性填充，执行初始化方法，将自己放入第一级缓存中（此时B是一个完整的对象）；
+		A得到对象B，将B注入到A中；
+		A完成属性填充，初始化，并放入到一级缓存中。
+	 */
 
+	//1级缓存 用于存放 已经属性赋值 初始化后的 单列bean
 	/** Cache of singleton objects: bean name to bean instance. */
 	private final Map<String, Object> singletonObjects = new ConcurrentHashMap<>(256);
 
+	//3级缓存 存储单例bean的工厂
 	/** Cache of singleton factories: bean name to ObjectFactory. */
 	private final Map<String, ObjectFactory<?>> singletonFactories = new HashMap<>(16);
 
+	// 2级缓存 用于存在已经实例化，还未做代理属性赋值操作的 单例  2级缓存中存放的是半成品对象，并不是一个完整对象
 	/** Cache of early singleton objects: bean name to bean instance. */
 	private final Map<String, Object> earlySingletonObjects = new ConcurrentHashMap<>(16);
 
@@ -179,16 +193,20 @@ public class DefaultSingletonBeanRegistry extends SimpleAliasRegistry implements
 	@Nullable
 	protected Object getSingleton(String beanName, boolean allowEarlyReference) {
 		// Quick check for existing instance without full singleton lock
+		// 先是从一级缓存中拿      如果拿不到就去二级缓存中拿
+		// 如果还没有那个从三级缓存中创建并放入到二级缓存中
 		Object singletonObject = this.singletonObjects.get(beanName);
 		if (singletonObject == null && isSingletonCurrentlyInCreation(beanName)) {
 			singletonObject = this.earlySingletonObjects.get(beanName);
 			if (singletonObject == null && allowEarlyReference) {
+				//CAS 保证线程安全
 				synchronized (this.singletonObjects) {
 					// Consistent creation of early reference within full singleton lock
 					singletonObject = this.singletonObjects.get(beanName);
 					if (singletonObject == null) {
 						singletonObject = this.earlySingletonObjects.get(beanName);
 						if (singletonObject == null) {
+							//3级缓存  在doCreateBean中创建了bean的实例后，封装ObjectFactory放入缓存的
 							ObjectFactory<?> singletonFactory = this.singletonFactories.get(beanName);
 							if (singletonFactory != null) {
 								singletonObject = singletonFactory.getObject();
