@@ -10,6 +10,9 @@ repositories {
 }
 
 dependencies {
+
+    // https://mvnrepository.com/artifact/org.projectlombok/lombok
+    implementation 'org.projectlombok:lombok:1.18.16'
     compile(project(":spring-core"))
     compile(project(":spring-context"))
     testImplementation 'org.junit.jupiter:junit-jupiter-api:5.8.1'
