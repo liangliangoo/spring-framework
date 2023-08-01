@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2021 the original author or authors.
+ * Copyright 2002-2023 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -65,7 +65,7 @@ public abstract class HttpRange {
 		long contentLength = getLengthFor(resource);
 		long start = getRangeStart(contentLength);
 		long end = getRangeEnd(contentLength);
-		Assert.isTrue(start < contentLength, "'position' exceeds the resource length " + contentLength);
+		Assert.isTrue(start < contentLength, () -> "'position' exceeds the resource length " + contentLength);
 		return new ResourceRegion(resource, start, end - start + 1);
 	}
 
@@ -147,9 +147,9 @@ public abstract class HttpRange {
 		Assert.hasLength(range, "Range String must not be empty");
 		int dashIdx = range.indexOf('-');
 		if (dashIdx > 0) {
-			long firstPos = Long.parseLong(range.substring(0, dashIdx));
+			long firstPos = Long.parseLong(range, 0, dashIdx, 10);
 			if (dashIdx < range.length() - 1) {
-				Long lastPos = Long.parseLong(range.substring(dashIdx + 1));
+				Long lastPos = Long.parseLong(range, dashIdx + 1, range.length(), 10);
 				return new ByteRange(firstPos, lastPos);
 			}
 			else {
@@ -157,7 +157,7 @@ public abstract class HttpRange {
 			}
 		}
 		else if (dashIdx == 0) {
-			long suffixLength = Long.parseLong(range.substring(1));
+			long suffixLength = Long.parseLong(range, 1, range.length(), 10);
 			return new SuffixByteRange(suffixLength);
 		}
 		else {
@@ -269,14 +269,9 @@ public abstract class HttpRange {
 
 		@Override
 		public boolean equals(@Nullable Object other) {
-			if (this == other) {
-				return true;
-			}
-			if (!(other instanceof ByteRange otherRange)) {
-				return false;
-			}
-			return (this.firstPos == otherRange.firstPos &&
-					ObjectUtils.nullSafeEquals(this.lastPos, otherRange.lastPos));
+			return (this == other || (other instanceof ByteRange that &&
+					this.firstPos == that.firstPos &&
+					ObjectUtils.nullSafeEquals(this.lastPos, that.lastPos)));
 		}
 
 		@Override
@@ -331,13 +326,8 @@ public abstract class HttpRange {
 
 		@Override
 		public boolean equals(@Nullable Object other) {
-			if (this == other) {
-				return true;
-			}
-			if (!(other instanceof SuffixByteRange otherRange)) {
-				return false;
-			}
-			return (this.suffixLength == otherRange.suffixLength);
+			return (this == other || (other instanceof SuffixByteRange that &&
+					this.suffixLength == that.suffixLength));
 		}
 
 		@Override

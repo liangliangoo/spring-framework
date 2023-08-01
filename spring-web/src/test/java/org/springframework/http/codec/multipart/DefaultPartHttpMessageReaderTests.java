@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2022 the original author or authors.
+ * Copyright 2002-2023 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -118,6 +118,10 @@ class DefaultPartHttpMessageReaderTests  {
 		Flux<Part> result = reader.read(forClass(Part.class), request, emptyMap());
 
 		StepVerifier.create(result)
+				.consumeNextWith(part -> {
+					assertThat(part.headers().getFirst("Header")).isEqualTo("Value");
+					part.content().subscribe(DataBufferUtils::release);
+				})
 				.expectError(DecodingException.class)
 				.verify();
 	}
@@ -414,20 +418,15 @@ class DefaultPartHttpMessageReaderTests  {
 	@interface ParameterizedDefaultPartHttpMessageReaderTest {
 	}
 
+	@SuppressWarnings("removal")
 	static Stream<Arguments> messageReaders() {
-		DefaultPartHttpMessageReader streaming = new DefaultPartHttpMessageReader();
-		streaming.setStreaming(true);
-
 		DefaultPartHttpMessageReader inMemory = new DefaultPartHttpMessageReader();
-		inMemory.setStreaming(false);
 		inMemory.setMaxInMemorySize(1000);
 
 		DefaultPartHttpMessageReader onDisk = new DefaultPartHttpMessageReader();
-		onDisk.setStreaming(false);
 		onDisk.setMaxInMemorySize(100);
 
 		return Stream.of(
-				arguments(named("streaming", streaming)),
 				arguments(named("in-memory", inMemory)),
 				arguments(named("on-disk", onDisk)));
 	}

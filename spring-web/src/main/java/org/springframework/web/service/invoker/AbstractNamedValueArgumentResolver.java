@@ -18,6 +18,7 @@ package org.springframework.web.service.invoker;
 
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -27,6 +28,7 @@ import org.apache.commons.logging.LogFactory;
 
 import org.springframework.core.MethodParameter;
 import org.springframework.core.convert.ConversionService;
+import org.springframework.core.convert.TypeDescriptor;
 import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
 import org.springframework.util.ObjectUtils;
@@ -41,15 +43,19 @@ import org.springframework.web.bind.annotation.ValueConstants;
  */
 public abstract class AbstractNamedValueArgumentResolver implements HttpServiceArgumentResolver {
 
+	private static final TypeDescriptor STRING_TARGET_TYPE = TypeDescriptor.valueOf(String.class);
+
 	protected final Log logger = LogFactory.getLog(getClass());
 
+
+	@Nullable
 	private final ConversionService conversionService;
 
 	private final Map<MethodParameter, NamedValueInfo> namedValueInfoCache = new ConcurrentHashMap<>(256);
 
 
 	/**
-	 * Create an instance.
+	 * Constructor for a resolver to a String value.
 	 * @param conversionService the {@link ConversionService} to use to format
 	 * Object to String values
 	 */
@@ -58,12 +64,11 @@ public abstract class AbstractNamedValueArgumentResolver implements HttpServiceA
 		this.conversionService = conversionService;
 	}
 
-
 	/**
-	 * Return the configured {@link ConversionService}.
+	 * Constructor for a resolver to an Object value, without conversion.
 	 */
-	public ConversionService getConversionService() {
-		return this.conversionService;
+	protected AbstractNamedValueArgumentResolver() {
+		this.conversionService = null;
 	}
 
 
@@ -79,16 +84,18 @@ public abstract class AbstractNamedValueArgumentResolver implements HttpServiceA
 
 		if (Map.class.isAssignableFrom(parameter.getParameterType())) {
 			Assert.isInstanceOf(Map.class, argument);
+			parameter = parameter.nested(1);
+			argument = (argument != null ? argument : Collections.emptyMap());
 			for (Map.Entry<String, ?> entry : ((Map<String, ?>) argument).entrySet()) {
 				addSingleOrMultipleValues(
 						entry.getKey(), entry.getValue(), false, null, info.label, info.multiValued,
-						requestValues);
+						parameter, requestValues);
 			}
 		}
 		else {
 			addSingleOrMultipleValues(
 					info.name, argument, info.required, info.defaultValue, info.label, info.multiValued,
-					requestValues);
+					parameter, requestValues);
 		}
 
 		return true;
@@ -132,16 +139,20 @@ public abstract class AbstractNamedValueArgumentResolver implements HttpServiceA
 
 	private void addSingleOrMultipleValues(
 			String name, @Nullable Object value, boolean required, @Nullable Object defaultValue,
-			String valueLabel, boolean supportsMultiValues, HttpRequestValues.Builder requestValues) {
+			String valueLabel, boolean supportsMultiValues, MethodParameter parameter,
+			HttpRequestValues.Builder requestValues) {
 
 		if (supportsMultiValues) {
-			value = (ObjectUtils.isArray(value) ? Arrays.asList((Object[]) value) : value);
+			if (ObjectUtils.isArray(value)) {
+				value = Arrays.asList((Object[]) value);
+			}
 			if (value instanceof Collection<?> elements) {
+				parameter = parameter.nested();
 				boolean hasValues = false;
 				for (Object element : elements) {
 					if (element != null) {
 						hasValues = true;
-						addSingleValue(name, element, false, null, valueLabel, requestValues);
+						addSingleValue(name, element, false, null, valueLabel, parameter, requestValues);
 					}
 				}
 				if (hasValues) {
@@ -151,12 +162,12 @@ public abstract class AbstractNamedValueArgumentResolver implements HttpServiceA
 			}
 		}
 
-		addSingleValue(name, value, required, defaultValue, valueLabel, requestValues);
+		addSingleValue(name, value, required, defaultValue, valueLabel, parameter, requestValues);
 	}
 
 	private void addSingleValue(
-			String name, @Nullable Object value, boolean required, @Nullable Object defaultValue, String valueLabel,
-			HttpRequestValues.Builder requestValues) {
+			String name, @Nullable Object value, boolean required, @Nullable Object defaultValue,
+			String valueLabel, MethodParameter parameter, HttpRequestValues.Builder requestValues) {
 
 		if (value instanceof Optional<?> optionalValue) {
 			value = optionalValue.orElse(null);
@@ -166,12 +177,16 @@ public abstract class AbstractNamedValueArgumentResolver implements HttpServiceA
 			value = defaultValue;
 		}
 
-		if (!(value instanceof String)) {
-			value = getConversionService().convert(value, String.class);
+		if (this.conversionService != null && !(value instanceof String)) {
+			parameter = parameter.nestedIfOptional();
+			Class<?> type = parameter.getNestedParameterType();
+			value = (type != Object.class && !type.isArray() ?
+					this.conversionService.convert(value, new TypeDescriptor(parameter), STRING_TARGET_TYPE) :
+					this.conversionService.convert(value, String.class));
 		}
 
 		if (value == null) {
-			Assert.isTrue(!required, "Missing " + valueLabel + " value '" + name + "'");
+			Assert.isTrue(!required, () -> "Missing " + valueLabel + " value '" + name + "'");
 			return;
 		}
 
@@ -179,17 +194,21 @@ public abstract class AbstractNamedValueArgumentResolver implements HttpServiceA
 			logger.trace("Resolved " + valueLabel + " value '" + name + ":" + value + "'");
 		}
 
-		addRequestValue(name, (String) value, requestValues);
+		addRequestValue(name, value, parameter, requestValues);
 	}
 
 	/**
 	 * Add the given, single request value. This may be called multiples times
 	 * if the request value is multivalued.
+	 * <p>If the resolver was created with a {@link ConversionService}, the value
+	 * will have been converted to a String and may be cast down.
 	 * @param name the request value name
 	 * @param value the value
+	 * @param parameter the method parameter type, nested if Map, List/array, or Optional
 	 * @param requestValues builder to add the request value to
 	 */
-	protected abstract void addRequestValue(String name, String value, HttpRequestValues.Builder requestValues);
+	protected abstract void addRequestValue(
+			String name, Object value, MethodParameter parameter, HttpRequestValues.Builder requestValues);
 
 
 	/**

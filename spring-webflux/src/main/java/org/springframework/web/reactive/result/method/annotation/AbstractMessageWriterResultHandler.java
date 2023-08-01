@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2021 the original author or authors.
+ * Copyright 2002-2023 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 package org.springframework.web.reactive.result.method.annotation;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 
@@ -32,6 +33,7 @@ import org.springframework.core.ResolvableType;
 import org.springframework.core.codec.Hints;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
+import org.springframework.http.ProblemDetail;
 import org.springframework.http.codec.HttpMessageWriter;
 import org.springframework.http.converter.HttpMessageNotWritableException;
 import org.springframework.lang.Nullable;
@@ -56,6 +58,9 @@ public abstract class AbstractMessageWriterResultHandler extends HandlerResultHa
 	protected static final String COROUTINES_FLOW_CLASS_NAME = "kotlinx.coroutines.flow.Flow";
 
 	private final List<HttpMessageWriter<?>> messageWriters;
+
+	private final List<MediaType> problemMediaTypes =
+			Arrays.asList(MediaType.APPLICATION_PROBLEM_JSON, MediaType.APPLICATION_PROBLEM_XML);
 
 
 	/**
@@ -117,7 +122,7 @@ public abstract class AbstractMessageWriterResultHandler extends HandlerResultHa
 	 * @return indicates completion or error
 	 * @since 5.0.2
 	 */
-	@SuppressWarnings({"unchecked", "rawtypes", "ConstantConditions"})
+	@SuppressWarnings({"rawtypes", "unchecked", "ConstantConditions"})
 	protected Mono<Void> writeBody(@Nullable Object body, MethodParameter bodyParameter,
 			@Nullable MethodParameter actualParam, ServerWebExchange exchange) {
 
@@ -139,8 +144,15 @@ public abstract class AbstractMessageWriterResultHandler extends HandlerResultHa
 		}
 		else {
 			publisher = Mono.justOrEmpty(body);
-			actualElementType = body != null ? ResolvableType.forInstance(body) : bodyType;
-			elementType = (bodyType.toClass() == Object.class && body != null ? actualElementType : bodyType);
+			ResolvableType bodyInstanceType = ResolvableType.forInstance(body);
+			if (bodyType.toClass() == Object.class && body != null) {
+				actualElementType = bodyInstanceType;
+				elementType = bodyInstanceType;
+			}
+			else {
+				actualElementType = (body == null || bodyInstanceType.hasUnresolvableGenerics()) ? bodyType : bodyInstanceType;
+				elementType = bodyType;
+			}
 		}
 
 		if (elementType.resolve() == void.class || elementType.resolve() == Void.class) {
@@ -161,6 +173,12 @@ public abstract class AbstractMessageWriterResultHandler extends HandlerResultHa
 			}
 			throw ex;
 		}
+
+		// For ProblemDetail, fall back on RFC 7807 format
+		if (bestMediaType == null && ProblemDetail.class.isAssignableFrom(elementType.toClass())) {
+			bestMediaType = selectMediaType(exchange, () -> getMediaTypesFor(elementType), this.problemMediaTypes);
+		}
+
 		if (bestMediaType != null) {
 			String logPrefix = exchange.getLogPrefix();
 			if (logger.isDebugEnabled()) {

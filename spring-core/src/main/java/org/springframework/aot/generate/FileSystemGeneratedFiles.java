@@ -73,9 +73,9 @@ public class FileSystemGeneratedFiles implements GeneratedFiles {
 	private static Function<Kind, Path> conventionRoots(Path root) {
 		Assert.notNull(root, "'root' must not be null");
 		return kind -> switch (kind) {
-		case SOURCE -> root.resolve("sources");
-		case RESOURCE -> root.resolve("resources");
-		case CLASS -> root.resolve("classes");
+			case SOURCE -> root.resolve("sources");
+			case RESOURCE -> root.resolve("resources");
+			case CLASS -> root.resolve("classes");
 		};
 	}
 
@@ -83,10 +83,10 @@ public class FileSystemGeneratedFiles implements GeneratedFiles {
 	public void addFile(Kind kind, String path, InputStreamSource content) {
 		Assert.notNull(kind, "'kind' must not be null");
 		Assert.hasLength(path, "'path' must not be empty");
-		Assert.notNull(content, "'kind' must not be null");
+		Assert.notNull(content, "'content' must not be null");
 		Path root = this.roots.apply(kind).toAbsolutePath().normalize();
 		Path relativePath = root.resolve(path).toAbsolutePath().normalize();
-		Assert.isTrue(relativePath.startsWith(root), () -> "'path' must be relative");
+		Assert.isTrue(relativePath.startsWith(root), "'path' must be relative");
 		try {
 			try (InputStream inputStream = content.getInputStream()) {
 				Files.createDirectories(relativePath.getParent());
