@@ -918,6 +918,7 @@ public abstract class AbstractAutowireCapableBeanFactory extends AbstractBeanFac
 		// If we're allowed, we can create the factory bean and call getObjectType() early
 		if (allowInit) {
 			FactoryBean<?> factoryBean = (mbd.isSingleton() ?
+					// 通过对象类型 从bean 工厂中回去对象 并检查对象是否存在
 					getSingletonFactoryBeanForTypeCheck(beanName, mbd) :
 					getNonSingletonFactoryBeanForTypeCheck(beanName, mbd));
 			if (factoryBean != null) {
